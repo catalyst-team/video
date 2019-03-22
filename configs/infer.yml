@@ -1,0 +1,18 @@
+data_params:
+  n_frames: 5
+  time_window: 1
+  uniform_time_sample: true
+  in_csv: null
+  tag2class: null
+  in_csv_infer: "./data/val_fold_0.csv"
+  datapath: "/mnt/ssd1/datasets/video_dataset_processed"
+
+args:
+  batch_size: 64
+
+stages: null
+callbacks_params:
+  loader:
+    callback: CheckpointCallback
+  infer:
+    callback: InferCallback
