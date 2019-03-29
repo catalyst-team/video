@@ -1,16 +1,21 @@
+from typing import Dict
+import json
 import os
 import numpy as np
 import random
 import cv2
 import collections
 import torch
-from catalyst.dl.datasource import AbstractDataSource
+import torch.nn as nn
 from catalyst.data.sampler import BalanceClassSampler
+from catalyst.data.dataset import ListDataset
 from catalyst.data.reader import ScalarReader, ReaderCompose
 from catalyst.data.augmentor import Augmentor
 from catalyst.data.functional import read_image
 from catalyst.dl.utils import UtilsFactory
-from catalyst.legacy.utils.parse import parse_in_csvs
+from catalyst.dl.experiments import ConfigExperiment
+from catalyst.utils.parse import read_csv_data
+
 
 from albumentations import (
     Resize, JpegCompression, Normalize,
@@ -18,6 +23,12 @@ from albumentations import (
     HueSaturationValue, MotionBlur,
     RandomBrightnessContrast, BasicTransform,
     OpticalDistortion, CLAHE)
+
+
+# ---- Augmentations ----
+cv2.setNumThreads(0)
+cv2.ocl.setUseOpenCL(False)
+IMG_SIZE = 224
 
 
 class ToTorchTensor(BasicTransform):
@@ -45,6 +56,7 @@ class TorchStack:
 
 
 def preprocess_val_data(data):
+    # copy data for each second of video
     new_data = []
     for d in data:
         for start_interval in range(int(d['secs'])):
@@ -152,20 +164,45 @@ class VideoImageReader:
         return result
 
 
-class DataSource(AbstractDataSource):
+class Experiment(ConfigExperiment):
+    def _prepare_logdir(self, config: Dict):
+        model_params = config["model_params"]["tsn_model"]
+        data_params = config["stages"]["data_params"]
+        return f"fold_{data_params.get('in_csv_train').split('/')[-1].split('_')[2].split('.')[0]}_" \
+               f"{data_params.get('uniform_time_sample')}_" \
+               f"{data_params.get('n_frames')}_{data_params.get('n_segments')}_" \
+               f"{model_params.get('early_consensus')}_" \
+               f"{model_params.get('feature_net_skip_connection')}_" \
+               f"{model_params.get('feature_net_hiddens')}_" \
+               f"{','.join(model_params.get('consensus'))}_" \
+               f"{model_params.get('kernel_size')}"
+
+    def _postprocess_model_for_stage(self, stage: str, model: nn.Module, partial_bn=2, **kwargs):
+        model_ = model
+        if isinstance(model, torch.nn.DataParallel):
+            model_ = model_.module
+
+        if stage in ["debug", "stage_head_train"]:
+            for param in model_.encoder.parameters():
+                param.requires_grad = False
+        elif stage in ["stage_full_finetune", "stage_full_train"]:
+            for param in model_.encoder.parameters():
+                param.requires_grad = True
+
+            count = 0
+            for m in model_.encoder.modules():
+                if isinstance(m, nn.BatchNorm2d):
+                    count += 1
+                    if count >= partial_bn:
+                        m.eval()
+                        # shutdown update in frozen mode
+                        m.weight.requires_grad = False
+                        m.bias.requires_grad = False
+        else:
+            pass
 
     @staticmethod
-    def prepare_transforms(
-            *,
-            mode,
-            stage=None,
-            input_size=None,
-            **kwargs):
-        AbstractDataSource.prepare_transforms(mode=mode, stage=stage, **kwargs)
-
-        input_size = input_size or 224
-
-        # train_crop = GroupMultiScaleCrop(input_size)
+    def get_transforms(stage: str = None, mode: str = None, input_size: int = 224):
         train_image_transforms = [
             OpticalDistortion(distort_limit=0.3, p=0.3),
             JpegCompression(quality_lower=50, p=0.8),
@@ -200,8 +237,8 @@ class DataSource(AbstractDataSource):
             return images
 
         train_transforms = Augmentor(
-                dict_key="features",
-                augment_fn=lambda x: train_aug_fn(x))
+            dict_key="features",
+            augment_fn=lambda x: train_aug_fn(x))
 
         valid_transforms = Augmentor(
             dict_key="features",
@@ -212,33 +249,33 @@ class DataSource(AbstractDataSource):
         else:
             return valid_transforms
 
-    @staticmethod
-    def prepare_loaders(
-            *,
-            mode=None,
-            stage=None,
-            n_workers: int = None,
-            batch_size: int = None,
-            datapath=None,
-            in_csv=None,
-            in_csv_train=None,
-            in_csv_valid=None,
-            in_csv_infer=None,
-            train_folds=None,
-            valid_folds=None,
-            tag2class=None,
-            class_column=None,
-            tag_column=None,
-            one_hot_classes=None,
-            folds_seed=42,
-            n_folds=5,
-            n_frames=None,
-            n_segments=None,
-            time_window=None,
-            uniform_time_sample=False,
-            train_frac=1,
+    def get_datasets(
+        self,
+        stage: str,
+        datapath: str = None,
+        in_csv: str = None,
+        in_csv_train: str = None,
+        in_csv_valid: str = None,
+        in_csv_infer: str = None,
+        train_folds: str = None,
+        valid_folds: str = None,
+        tag2class: str = None,
+        class_column: str = None,
+        tag_column: str = None,
+        folds_seed: int = 42,
+        n_folds: int = 5,
+        one_hot_classes: bool = None,
+        n_frames: int = None,
+        n_segments: int = None,
+        time_window: int = None,
+        uniform_time_sample: bool = False,
     ):
-        df, df_train, df_valid, df_infer = parse_in_csvs(
+        datasets = collections.OrderedDict()
+        tag2class = json.load(open(tag2class)) \
+            if tag2class is not None \
+            else None
+
+        df, df_train, df_valid, df_infer = read_csv_data(
             in_csv=in_csv,
             in_csv_train=in_csv_train,
             in_csv_valid=in_csv_valid,
@@ -248,16 +285,11 @@ class DataSource(AbstractDataSource):
             tag2class=tag2class,
             class_column=class_column,
             tag_column=tag_column,
-            folds_seed=folds_seed,
-            n_folds=n_folds)
+            seed=folds_seed,
+            n_folds=n_folds
+        )
 
         df_valid = preprocess_val_data(df_valid)
-        assert 0 < train_frac <= 1
-        if train_frac < 1:
-            train_size = int(len(df_train) * train_frac)
-            df_train = df_train[:train_size]
-
-        loaders = collections.OrderedDict()
 
         open_fn = [
             ScalarReader(
@@ -300,58 +332,38 @@ class DataSource(AbstractDataSource):
         open_fn = ReaderCompose(readers=open_fn)
         open_fn_val = ReaderCompose(readers=open_fn_val)
 
-        if len(df_train) > 0:
-            labels = [x["class"] for x in df_train]
-            sampler = BalanceClassSampler(labels, mode="upsampling")
-            dict_transform = DataSource.prepare_transforms(
-                mode="train", stage=stage)
+        for source, mode in zip(
+                (df_train, df_valid, df_infer),
+                ("train", "valid", "infer")):
+            if len(source) > 0:
+                dataset = ListDataset(
+                    source,
+                    open_fn=open_fn_val if mode == "valid" else open_fn,
+                    dict_transform=self.get_transforms(
+                        stage=stage, mode=mode
+                    ),
+                )
+                datasets[mode] = dataset
+        import ipdb;ipdb.set_trace()
 
-            train_loader = UtilsFactory.create_loader(
-                data_source=df_train,
-                open_fn=open_fn,
-                dict_transform=dict_transform,
-                dataset_cache_prob=-1,
-                batch_size=batch_size,
-                workers=n_workers,
-                shuffle=sampler is None,
-                sampler=sampler)
+        return datasets
 
-            print("Train samples", len(train_loader) * batch_size)
-            print("Train batches", len(train_loader))
-            loaders["train"] = train_loader
-
-        if len(df_valid) > 0:
-            dict_transform = DataSource.prepare_transforms(
-                mode="valid", stage=stage)
-            valid_loader = UtilsFactory.create_loader(
-                data_source=df_valid,
-                open_fn=open_fn_val,
-                dict_transform=dict_transform,
-                dataset_cache_prob=-1,
-                batch_size=batch_size,
-                workers=n_workers,
-                shuffle=False,
-                sampler=None)
-
-            print("Valid samples", len(valid_loader) * batch_size)
-            print("Valid batches", len(valid_loader))
-            loaders["valid"] = valid_loader
-
-        if len(df_infer) > 0:
-            dict_transform = DataSource.prepare_transforms(
-                mode="infer", stage=stage)
-            infer_loader = UtilsFactory.create_loader(
-                data_source=df_infer,
-                open_fn=open_fn,
-                dict_transform=dict_transform,
-                dataset_cache_prob=-1,
-                batch_size=batch_size,
-                workers=n_workers,
-                shuffle=False,
-                sampler=None)
-
-            print("Infer samples", len(infer_loader) * batch_size)
-            print("Infer batches", len(infer_loader))
-            loaders["infer"] = infer_loader
-
-        return loaders
+    #     if len(df_train) > 0:
+    #         labels = [x["class"] for x in df_train]
+    #         sampler = BalanceClassSampler(labels, mode="upsampling")
+    #         dict_transform = Experiment.get_transforms(
+    #             mode="train", stage=stage)
+    #
+    #         train_loader = UtilsFactory.create_loader(
+    #             data_source=df_train,
+    #             open_fn=open_fn,
+    #             dict_transform=dict_transform,
+    #             dataset_cache_prob=-1,
+    #             batch_size=batch_size,
+    #             workers=n_workers,
+    #             shuffle=sampler is None,
+    #             sampler=sampler)
+    #
+    #         print("Train samples", len(train_loader) * batch_size)
+    #         print("Train batches", len(train_loader))
+    #         loaders["train"] = train_loader

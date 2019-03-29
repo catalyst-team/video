@@ -170,7 +170,6 @@ class TSN(nn.Module):
 
 def prepare_tsn_base_model(partial_bn=None, **kwargs):
     """
-
     :param partial_bn: 2 if partial_bn else 1
     :param kwargs:
     :return:
@@ -189,3 +188,9 @@ def prepare_tsn_base_model(partial_bn=None, **kwargs):
                     m.bias.requires_grad = False
 
     return base_model
+
+
+def tsn(base_model, tsn_model):
+    base_model = prepare_tsn_base_model(**base_model)
+    net = TSN(encoder=base_model, **tsn_model)
+    return net
