@@ -1,4 +1,4 @@
-# Video.catalyst
+# Video.catalyst (WIP)
 Example of using catalyst for video segmentation (classification) task using TSN network.
 
 ## Preparation
@@ -42,16 +42,15 @@ PYTHONPATH=tsn python tsn/prepare_splits.py \
 ```
 ### Model training
 ```bash
-CUDA_VISIBLE_DEVICES=1 catalyst-dl run --config configs/train.yml
+CUDA_VISIBLE_DEVICES=0 catalyst-dl run --config configs/train.yml
 ```
 
-# WIP
  
 #### Tensorboard
 ```bash
-CUDA_VISIBLE_DEVICES="" tensorboard --logdir tsn --ip=0.0.0.0 --port=6006
+CUDA_VISIBLE_DEVICES="" tensorboard --logdir /mnt/ssd1/logs/tsn --host=0.0.0.0 --port=6006
 ```
-
+# WIP
 ### Model inference
 Don't forget to fix data_params at `infer.yaml`
 

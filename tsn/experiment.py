@@ -75,11 +75,11 @@ class VideoImageReader:
             output_key: str,
             datapath: str = None,
             grayscale: bool = False,
-            n_frames=None,
-            n_segments=None,
-            time_window=None,
-            uniform_time_sample=False,
-            with_offset=False):
+            n_frames: int = None,
+            n_segments: int = None,
+            time_window:int = None,
+            uniform_time_sample:bool = False,
+            with_offset: bool = False):
         """
         :param input_key: input key to use from annotation dict
         :param output_key: output key to use to store the result
@@ -91,6 +91,7 @@ class VideoImageReader:
         :param n_segments: number of frames splitting
         :param time_window: length of sample crop from video  in seconds
         :param uniform_time_sample: use uniform frames sample from time interval or not
+        :param with_offset: enable for sequential for second validation
         """
         self.input_key = input_key
         self.output_key = output_key
@@ -345,25 +346,11 @@ class Experiment(ConfigExperiment):
                         stage=stage, mode=mode
                     ),
                 )
-                datasets[mode] = dataset
-        return datasets
+                dataset_dict = {'dataset': dataset}
+                if mode == 'train':
+                    labels = [x["class"] for x in df_train]
+                    sampler = BalanceClassSampler(labels, mode="upsampling")
+                    dataset_dict['sampler'] = sampler
 
-    #     if len(df_train) > 0:
-    #         labels = [x["class"] for x in df_train]
-    #         sampler = BalanceClassSampler(labels, mode="upsampling")
-    #         dict_transform = Experiment.get_transforms(
-    #             mode="train", stage=stage)
-    #
-    #         train_loader = UtilsFactory.create_loader(
-    #             data_source=df_train,
-    #             open_fn=open_fn,
-    #             dict_transform=dict_transform,
-    #             dataset_cache_prob=-1,
-    #             batch_size=batch_size,
-    #             workers=n_workers,
-    #             shuffle=sampler is None,
-    #             sampler=sampler)
-    #
-    #         print("Train samples", len(train_loader) * batch_size)
-    #         print("Train batches", len(train_loader))
-    #         loaders["train"] = train_loader
+                datasets[mode] = dataset_dict
+        return datasets
