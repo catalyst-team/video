@@ -4,7 +4,7 @@ from torch import nn
 from catalyst.contrib.models import ResnetEncoder
 from catalyst.contrib.models import SequentialNet
 from catalyst.dl.initialization import create_optimal_inner_init, outer_init
-from catalyst.dl.registry import Registry
+from catalyst.dl import registry
 
 
 class TSN(nn.Module):
@@ -35,7 +35,7 @@ class TSN(nn.Module):
         self.feature_net_skip_connection = feature_net_skip_connection
         self.early_consensus = early_consensus
 
-        nonlinearity = torch.nn.ReLU  # Registry.name2nn(activation_fn)
+        nonlinearity = registry.MODULES.get_if_str(activation_fn)
         inner_init = create_optimal_inner_init(nonlinearity=nonlinearity)
         kernel2pad = {1: 0, 3: 1, 5: 2}
 
