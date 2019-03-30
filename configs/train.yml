@@ -42,7 +42,7 @@ stages:
     in_csv_infer: "./data/val_fold_0.csv"
     one_hot_classes: *n_cls
     batch_size: 32
-    n_workers: 16
+    num_workers: 16
   callbacks_params:
     loss:
       callback: LossCallback

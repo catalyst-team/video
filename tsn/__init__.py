@@ -1,7 +1,7 @@
 # flake8: noqa
-from catalyst.contrib.registry import Registry
+from catalyst.dl import registry
 from .experiment import Experiment
 from catalyst.dl.experiments.runner import SupervisedRunner as Runner
 from .tsn import tsn
 
-Registry.model(tsn)
+registry.Model(tsn)

@@ -31,4 +31,4 @@ torchvision==0.2.1
 tqdm==4.31.1
 urllib3==1.24.1
 visdom==0.1.8.5
-catalyst==19.3rc0
+catalyst==19.3

@@ -201,6 +201,8 @@ class Experiment(ConfigExperiment):
         else:
             pass
 
+        return model
+
     @staticmethod
     def get_transforms(stage: str = None, mode: str = None, input_size: int = 224):
         train_image_transforms = [
