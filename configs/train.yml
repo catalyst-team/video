@@ -81,6 +81,11 @@ stages:
       lr: 0.001
       weight_decay: 0.0005
 
+      scheduler_params:
+        scheduler: MultiStepLR
+        gamma: 0.5
+        milestones: [5]
+
   stage_full_finetune:
     stage_params:
       partial_bn: 2
