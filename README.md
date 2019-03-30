@@ -64,7 +64,7 @@ CUDA_VISIBLE_DEVICES=1 PYTHONPATH=tsn catalyst-dl infer \
    --verbose
  ```
 
-### Docker 
+### Docker  (TODO)
 Build
 ```bash
 docker build -t tsn .
