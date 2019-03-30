@@ -1,10 +1,10 @@
 from collections import OrderedDict
 import torch
 from torch import nn
-from catalyst.contrib.models.resnet_encoder import ResnetEncoder
-from catalyst.contrib.models.sequential import SequentialNet
+from catalyst.contrib.models import ResnetEncoder
+from catalyst.contrib.models import SequentialNet
 from catalyst.dl.initialization import create_optimal_inner_init, outer_init
-from catalyst.contrib.registry import Registry
+from catalyst.dl import registry
 
 
 class TSN(nn.Module):
@@ -35,7 +35,7 @@ class TSN(nn.Module):
         self.feature_net_skip_connection = feature_net_skip_connection
         self.early_consensus = early_consensus
 
-        nonlinearity = Registry.name2nn(activation_fn)
+        nonlinearity = registry.MODULES.get_if_str(activation_fn)
         inner_init = create_optimal_inner_init(nonlinearity=nonlinearity)
         kernel2pad = {1: 0, 3: 1, 5: 2}
 
@@ -170,7 +170,6 @@ class TSN(nn.Module):
 
 def prepare_tsn_base_model(partial_bn=None, **kwargs):
     """
-
     :param partial_bn: 2 if partial_bn else 1
     :param kwargs:
     :return:
@@ -189,3 +188,9 @@ def prepare_tsn_base_model(partial_bn=None, **kwargs):
                     m.bias.requires_grad = False
 
     return base_model
+
+
+def tsn(base_model, tsn_model):
+    base_model = prepare_tsn_base_model(**base_model)
+    net = TSN(encoder=base_model, **tsn_model)
+    return net

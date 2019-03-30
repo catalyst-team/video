@@ -1,12 +1,14 @@
 model_params:
   fp16: false
   model: tsn
+
   base_model:
     partial_bn: null
     arch: resnet18
     pretrained: true
     frozen: true
     pooling: GlobalConcatPool2d
+
   tsn_model:
     feature_net_hiddens: 128
     emb_net_hiddens: 128
@@ -18,10 +20,10 @@ model_params:
     dropout: 0.5
 
 args:
-  workers: 16
   expdir: "tsn"
   logdir: /mnt/ssd1/logs/tsn
 #  baselogdir: /mnt/ssd1/logs/tsn_grid # for grid search
+
 stages:
   state_params:
     main_metric: precision01
@@ -31,6 +33,7 @@ stages:
     criterion: BCELoss # CrossEntropyLoss
 
   data_params:
+    batch_size: 16
     n_frames: 5
     time_window: 1
     uniform_time_sample: true
@@ -40,31 +43,38 @@ stages:
     datapath: "/mnt/ssd1/datasets/video_dataset_processed"
     in_csv_train: "./data/train_fold_0.csv"
     in_csv_valid: "./data/val_fold_0.csv"
-    train_frac: 1.0
+    in_csv_infer: "./data/val_fold_0.csv"
     one_hot_classes: *n_cls
+    num_workers: 16
 
   callbacks_params:
     loss:
       callback: LossCallback
       input_key: targets_onehot
+
     optimizer:
       callback: OptimizerCallback
+
     precision:
       callback: PrecisionCallback
       precision_args: [1]
+
     scheduler:
       callback: SchedulerCallback
       reduce_metric: precision01
+
     saver:
       callback: CheckpointCallback
-    logger:
-      callback: Logger
+
     tflogger:
       callback: TensorboardLogger
+
     infer:
       callback: InferCallback
 
   stage_head_train:
+    state_params:
+      num_epochs: 10
 
     optimizer_params:
       optimizer: Adam
@@ -73,17 +83,13 @@ stages:
 
     scheduler_params:
       scheduler: MultiStepLR
-      gamma: 0.1
-      milestones: [10]
-
-    args:
-      epochs: 10
-      batch_size: 32
+      gamma: 0.5
+      milestones: [5]
 
   stage_full_finetune:
-
     stage_params:
       partial_bn: 2
+      num_epochs: 20
 
     optimizer_params:
       optimizer: SGD
@@ -95,7 +101,3 @@ stages:
       scheduler: MultiStepLR
       gamma: 0.1
       milestones: [10]
-
-    args:
-      epochs: 20
-      batch_size: 16

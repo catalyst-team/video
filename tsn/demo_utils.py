@@ -58,8 +58,6 @@ def dataset_from_video(path, data_path='', offset_numerator=None, offset_denomin
 
 def prediction_to_label(probs):
     mapping = {
-        0: 'walk',
-        1: 'trot'
     }
 
     classes = probs.argmax(axis=1)
