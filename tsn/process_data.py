@@ -2,12 +2,13 @@ import argparse
 import os
 import pandas as pd
 import cv2
-from catalyst.utils.misc import set_global_seeds, boolean_flag
-from catalyst.utils.parallelize import parallelize
+from catalyst.utils import (
+    set_global_seed, boolean_flag, get_pool, tqdm_parallel_imap
+)
 
 
-set_global_seeds(42)
-os.environ['OMP_NUM_THREADS'] = '1'
+set_global_seed(42)
+os.environ["OMP_NUM_THREADS"] = "1"
 
 
 def parse_args():
@@ -53,7 +54,7 @@ def process_video(filepath, out_dir, datapath=None):
         ret, frame = capture.read()
         if frame is None:
             continue
-        cv2.imwrite('{}/{:06d}_{}.jpg'.format(respath, i, fps), frame)
+        cv2.imwrite("{}/{:06d}_{}.jpg".format(respath, i, fps), frame)
     capture.release()
 
     result = localpath
@@ -89,11 +90,8 @@ def main(args):
         df["out_dir"] = args.out_dir
 
     df_list = csv2list(df)
-    df_list_out = parallelize(
-        items=df_list,
-        func=process_row,
-        thread_count=args.n_cpu,
-        progressbar=args.verbose)
+    with get_pool(args.n_cpu) as pool:
+        df_list_out = tqdm_parallel_imap(process_row, df_list, pool)
     df_out = pd.DataFrame(df_list_out)
     df_out.to_csv(args.out_csv, index=False)
 

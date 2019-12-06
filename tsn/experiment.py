@@ -7,14 +7,14 @@ import cv2
 import collections
 import torch
 import torch.nn as nn
-from catalyst.data.sampler import BalanceClassSampler
-from catalyst.data.dataset import ListDataset
-from catalyst.data.reader import ScalarReader, ReaderCompose
+
 from catalyst.data.augmentor import Augmentor
-from catalyst.data.functional import read_image
-from catalyst.dl.utils import UtilsFactory
-from catalyst.dl.experiments import ConfigExperiment
-from catalyst.utils.parse import read_csv_data
+from catalyst.data.dataset import ListDataset
+from catalyst.data.reader import ScalarReader, ReaderCompose, ImageReader
+from catalyst.data.sampler import BalanceClassSampler
+from catalyst.dl import ConfigExperiment
+from catalyst.utils import imread
+from catalyst.utils.pandas import read_csv_data
 
 
 from albumentations import (
@@ -55,12 +55,12 @@ class TorchStack:
         return tensors
 
 
-def preprocess_val_data(data):
+def preprocess_valid_data(data):
     # copy data for each second of video
     new_data = []
     for d in data:
-        for start_interval in range(int(d['secs'])):
-            d['offset'] = start_interval
+        for start_interval in range(int(d["secs"])):
+            d["offset"] = start_interval
             new_data.append(d)
     return new_data
 
@@ -70,16 +70,17 @@ class VideoImageReader:
     Video images reader abstraction.
     """
     def __init__(
-            self,
-            input_key: str,
-            output_key: str,
-            datapath: str = None,
-            grayscale: bool = False,
-            n_frames: int = None,
-            n_segments: int = None,
-            time_window:int = None,
-            uniform_time_sample:bool = False,
-            with_offset: bool = False):
+        self,
+        input_key: str,
+        output_key: str,
+        datapath: str = None,
+        grayscale: bool = False,
+        num_frames: int = None,
+        num_segments: int = None,
+        time_window:int = None,
+        uniform_time_sample:bool = False,
+        with_offset: bool = False
+    ):
         """
         :param input_key: input key to use from annotation dict
         :param output_key: output key to use to store the result
@@ -87,8 +88,8 @@ class VideoImageReader:
             (so your can use relative paths in annotations)
         :param grayscale: boolean flag
             if you need to work only with grayscale images
-        :param n_frames: number of frames to take from each segment
-        :param n_segments: number of frames splitting
+        :param num_frames: number of frames to take from each segment
+        :param num_segments: number of frames splitting
         :param time_window: length of sample crop from video  in seconds
         :param uniform_time_sample: use uniform frames sample from time interval or not
         :param with_offset: enable for sequential for second validation
@@ -97,8 +98,8 @@ class VideoImageReader:
         self.output_key = output_key
         self.datapath = datapath
         self.grayscale = grayscale
-        self.n_frames = n_frames
-        self.n_segments = n_segments
+        self.num_frames = num_frames
+        self.num_segments = num_segments
         self.time_window = time_window
         self.uniform_time_sample = uniform_time_sample
         self.with_offset = with_offset
@@ -112,7 +113,7 @@ class VideoImageReader:
                 else os.path.join(self.datapath, file_dir))
 
         frames = [os.path.join(file_dir, img) for img in os.listdir(file_dir)]
-        fps = int(frames[0].split('/')[-1].split('_')[1].split('.')[0])
+        fps = int(frames[0].split("/")[-1].split("_")[1].split(".")[0])
 
         # Step 1: sorting
         frames = sorted(frames)
@@ -121,37 +122,42 @@ class VideoImageReader:
         if self.time_window:
             frame_window = self.time_window * fps
             if self.with_offset:
-                start_frame = row['offset'] * fps
+                start_frame = row["offset"] * fps
             elif len(frames) > frame_window:
                 start_frame = np.random.randint(0, len(frames) - frame_window)
             else:
                 start_frame = 0
-            frames = frames[start_frame: start_frame + frame_window]  # mb less than frame_window
+            # mb less than frame_window
+            frames = frames[start_frame: start_frame + frame_window]
         else:
             frame_window = len(frames)
 
         # Step 3: choosing frames from time range
         # Option a: uniform time sampling (with constant time step)
         if self.uniform_time_sample:
-            frames_indexes = [int(frame_window / self.n_frames * i) for i in range(self.n_frames)]
-            # If frames less than needed - duplicate last. Important to keep constant time step
+            frames_indexes = [
+                int(frame_window / self.num_frames * i)
+                for i in range(self.num_frames)
+            ]
+            # If frames less than needed - duplicate last.
+            # Important to keep constant time step
             frames = [frames[min(i, len(frames) - 1)] for i in frames_indexes]
 
-        # Option b: (self.n_frames is None) use all frames (bad idea)
-        elif self.n_frames is not None:
+        # Option b: (self.num_frames is None) use all frames (bad idea)
+        elif self.num_frames is not None:
             tmp_frames = []
-            if self.n_segments is not None:
+            if self.num_segments is not None:
                 # Option c: random n sample from each successive interval
-                frames = np.array_split(frames, self.n_segments)
+                frames = np.array_split(frames, self.num_segments)
             else:
                 # Option d: random n sample (at all) from all frames
                 frames = [frames]
 
             for frames_ in frames:
-                replace_ = self.n_frames > len(frames_)
+                replace_ = self.num_frames > len(frames_)
                 frames_ = np.random.choice(
                     frames_,
-                    self.n_frames,
+                    self.num_frames,
                     replace=replace_).tolist()
                 tmp_frames.extend(frames_)
 
@@ -159,8 +165,9 @@ class VideoImageReader:
             frames = tmp_frames
 
         frames = [
-            read_image(x, datapath=self.datapath, grayscale=self.grayscale)
-            for x in frames]
+            imread(x, rootpath=self.datapath, grayscale=self.grayscale)
+            for x in frames
+        ]
         result = {self.output_key: frames}
         return result
 
@@ -169,14 +176,19 @@ class Experiment(ConfigExperiment):
     def _prepare_logdir(self, config: Dict):
         model_params = config["model_params"]["tsn_model"]
         data_params = config["stages"]["data_params"]
-        return f"fold_{data_params.get('in_csv_train').split('/')[-1].split('_')[2].split('.')[0]}_" \
-               f"{data_params.get('uniform_time_sample')}_" \
-               f"{data_params.get('n_frames')}_{data_params.get('n_segments')}_" \
-               f"{model_params.get('early_consensus')}_" \
-               f"{model_params.get('feature_net_skip_connection')}_" \
-               f"{model_params.get('feature_net_hiddens')}_" \
-               f"{','.join(model_params.get('consensus'))}_" \
-               f"{model_params.get('kernel_size')}"
+        train_data_name = (
+            data_params.get("in_csv_train")
+                .split("/")[-1].split("_")[2].split(".")[0]
+        )
+        return f"fold_{train_data_name}" \
+               f"-{data_params.get('uniform_time_sample')}" \
+               f"-{data_params.get('num_frames')}" \
+               f"-{data_params.get('num_segments')}" \
+               f"-{model_params.get('early_consensus')}" \
+               f"-{model_params.get('feature_net_skip_connection')}" \
+               f"-{model_params.get('feature_net_hiddens')}" \
+               f"-{','.join(model_params.get('consensus'))}" \
+               f"-{model_params.get('kernel_size')}"
 
     def _postprocess_model_for_stage(self, stage: str, model: nn.Module, partial_bn=2, **kwargs):
         model_ = model
@@ -212,9 +224,19 @@ class Experiment(ConfigExperiment):
             HorizontalFlip(p=0.5),
             MotionBlur(p=0.5),
             ShiftScaleRotate(
-                shift_limit=0.1, scale_limit=0.2, rotate_limit=20, p=0.5),
-            RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.2, p=0.4),
-            HueSaturationValue(hue_shift_limit=3, sat_shift_limit=20, val_shift_limit=30, p=0.4),
+                shift_limit=0.1,
+                scale_limit=0.2,
+                rotate_limit=20,
+                p=0.5),
+            RandomBrightnessContrast(
+                brightness_limit=0.3,
+                contrast_limit=0.2,
+                p=0.4),
+            HueSaturationValue(
+                hue_shift_limit=3,
+                sat_shift_limit=20,
+                val_shift_limit=30,
+                p=0.4),
             CLAHE(clip_limit=2, p=0.3)
         ]
         infer_image_transforms = [
@@ -268,8 +290,8 @@ class Experiment(ConfigExperiment):
         folds_seed: int = 42,
         n_folds: int = 5,
         one_hot_classes: bool = None,
-        n_frames: int = None,
-        n_segments: int = None,
+        num_frames: int = None,
+        num_segments: int = None,
         time_window: int = None,
         uniform_time_sample: bool = False,
     ):
@@ -292,24 +314,27 @@ class Experiment(ConfigExperiment):
             n_folds=n_folds
         )
 
-        df_valid = preprocess_val_data(df_valid)
+        df_valid = preprocess_valid_data(df_valid)
 
         open_fn = [
             ScalarReader(
                 input_key="class",
                 output_key="targets",
                 default_value=-1,
-                dtype=np.int64),
+                dtype=np.int64
+            )
 
         ]
-        if one_hot_classes is not None:
+        if one_hot_classes:
             open_fn.append(
                 ScalarReader(
                     input_key="class",
-                    output_key="targets_onehot",
+                    output_key="targets_one_hot",
                     default_value=-1,
-                    dtype=np.int32,
-                    one_hot_classes=one_hot_classes))
+                    dtype=np.int64,
+                    one_hot_classes=one_hot_classes
+                )
+            )
 
         open_fn_val = open_fn.copy()
         open_fn.append(
@@ -317,8 +342,8 @@ class Experiment(ConfigExperiment):
                 input_key="filepath",
                 output_key="features",
                 datapath=datapath,
-                n_frames=n_frames,
-                n_segments=n_segments,
+                num_frames=num_frames,
+                num_segments=num_segments,
                 time_window=time_window,
                 uniform_time_sample=uniform_time_sample))
         open_fn_val.append(
@@ -326,8 +351,8 @@ class Experiment(ConfigExperiment):
                 input_key="filepath",
                 output_key="features",
                 datapath=datapath,
-                n_frames=n_frames,
-                n_segments=n_segments,
+                num_frames=num_frames,
+                num_segments=num_segments,
                 time_window=time_window,
                 uniform_time_sample=uniform_time_sample,
                 with_offset=True))
@@ -346,8 +371,8 @@ class Experiment(ConfigExperiment):
                         stage=stage, mode=mode
                     ),
                 )
-                dataset_dict = {'dataset': dataset}
-                if mode == 'train':
+                dataset_dict = {"dataset": dataset}
+                if mode == "train":
                     labels = [x["class"] for x in df_train]
                     sampler = BalanceClassSampler(labels, mode="upsampling")
                     dataset_dict['sampler'] = sampler

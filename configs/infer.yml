@@ -1,11 +1,11 @@
 data_params:
-  n_frames: 5
+  num_frames: 5
   time_window: 1
   uniform_time_sample: true
   in_csv: null
   tag2class: null
-  in_csv_infer: "./data/val_fold_0.csv"
-  datapath: "/mnt/ssd1/datasets/video_dataset_processed"
+  in_csv_infer: "./data/valid_fold_0.csv"
+  datapath: "./data/video_dataset_processed"
 
 args:
   batch_size: 64

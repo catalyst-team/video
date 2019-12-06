@@ -1,5 +1,13 @@
-# Video.catalyst (WIP)
-Example of using catalyst for video segmentation (classification) task using TSN network.
+[![Build Status](https://travis-ci.com/catalyst-team/classification.svg?branch=master)](https://travis-ci.com/catalyst-team/classification)
+[![Telegram](https://img.shields.io/badge/news-on%20telegram-blue)](https://t.me/catalyst_team)
+[![Gitter](https://badges.gitter.im/catalyst-team/community.svg)](https://gitter.im/catalyst-team/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+[![Spectrum](https://img.shields.io/badge/chat-on%20spectrum-blueviolet)](https://spectrum.chat/catalyst)
+[![Slack](https://img.shields.io/badge/ODS-slack-red)](https://opendatascience.slack.com/messages/CGK4KQBHD)
+[![Donate](https://raw.githubusercontent.com/catalyst-team/catalyst-pics/master/third_party_pics/patreon.png)](https://www.patreon.com/catalyst_team)
+
+# Catalyst.Video
+
+You will learn how to build video classification pipeline with transfer learning using the Catalyst framework to get reproducible results.
 
 ## Preparation
 You have to split your video files into classes in the following format:
@@ -16,7 +24,7 @@ video_dataset/
 
 ```bash
 catalyst-data tag2label \
-    --in-dir=/mnt/ssd1/datasets/video_dataset \
+    --in-dir=./data/video_dataset \
     --out-dataset=./data/dataset.csv \
     --out-labeling=./data/labeling.json \
     --tag-column=video
@@ -25,19 +33,20 @@ catalyst-data tag2label \
 ```bash
 python tsn/process_data.py \
     --in-csv=./data/dataset.csv \
+    --datapath=./data/video_dataset \
     --out-csv=./data/dataset_processed.csv \
-    --n-cpu=16 --verbose \
-    --out-dir=/mnt/ssd1/datasets/video_dataset_processed \
-    --datapath=/mnt/ssd1/datasets/video_dataset
+    --out-dir=./data/video_dataset_processed \
+    --n-cpu=4 \
+    --verbose
 ```
 
 ### Data splitting
 ```bash
 PYTHONPATH=tsn python tsn/prepare_splits.py \
-    --base_path=/mnt/ssd1/datasets/video_dataset \
+    --base_path=./data/video_dataset \
     --dataset_path=./data/dataset.csv \
-    --out_folder=data \
-    --k_fold=8 \
+    --out_folder=./data \
+    --k_fold=5 \
     --use_folds=4
 ```
 ### Model training

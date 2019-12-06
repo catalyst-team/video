@@ -1,27 +1,30 @@
 from collections import OrderedDict
+
 import torch
 from torch import nn
-from catalyst.contrib.models import ResnetEncoder
-from catalyst.contrib.models import SequentialNet
-from catalyst.dl.initialization import create_optimal_inner_init, outer_init
+
 from catalyst.dl import registry
+from catalyst.contrib.models import SequentialNet
+from catalyst.contrib.models.encoder import ResnetEncoder
+from catalyst.utils import create_optimal_inner_init, outer_init
 
 
 class TSN(nn.Module):
     def __init__(
-            self,
-            encoder,
-            n_cls,
-            feature_net_hiddens=None,
-            emb_net_hiddens=None,
-            activation_fn=torch.nn.ReLU,
-            norm_fn=None,
-            bias=True,
-            dropout=None,
-            consensus=None,
-            kernel_size=1,
-            feature_net_skip_connection=False,
-            early_consensus=True):
+        self,
+        encoder,
+        num_classes,
+        feature_net_hiddens=None,
+        emb_net_hiddens=None,
+        activation_fn=torch.nn.ReLU,
+        norm_fn=None,
+        bias=True,
+        dropout=None,
+        consensus=None,
+        kernel_size=1,
+        feature_net_skip_connection=False,
+        early_consensus=True
+    ):
         super().__init__()
 
         assert consensus is not None
@@ -48,20 +51,23 @@ class TSN(nn.Module):
         if feature_net_hiddens is not None:
             self.feature_net = SequentialNet(
                 hiddens=[encoder.out_features] + [feature_net_hiddens],
-                activation_fn=activation_fn,
                 layer_fn=layer_fn,
-                norm_fn=norm_fn, bias=bias, dropout=dropout)
+                norm_fn=norm_fn,
+                activation_fn=activation_fn,
+            )
             self.feature_net.apply(inner_init)
             out_features = feature_net_hiddens
         else:
-            # if no feature net, then no need of skip connection (nothing to skip)
+            # if no feature net, then no need of skip connection
+            # (nothing to skip)
             assert not self.feature_net_skip_connection
             self.feature_net = lambda x: x
             out_features = encoder.out_features
 
         # Differences are starting here
 
-        # Input channels to consensus function (also to embedding net multiplied by len(consensus))
+        # Input channels to consensus function
+        # (also to embedding net multiplied by len(consensus))
         if self.feature_net_skip_connection:
             in_channels = out_features + encoder.out_features
         else:
@@ -98,18 +104,18 @@ class TSN(nn.Module):
 
             self.emb_net = SequentialNet(
                 hiddens=[in_channels * len(consensus_fn), emb_net_hiddens],
+                layer_fn=nn.Linear,
+                norm_fn=norm_fn,
                 activation_fn=activation_fn,
-                norm_fn=norm_fn, bias=bias, dropout=dropout)
+            )
             self.emb_net.apply(inner_init)
         else:
-
-
             if self.feature_net_skip_connection:
                 out_features = out_features + self.encoder.out_features
             else:
                 out_features = out_features
 
-        self.head = nn.Linear(out_features, n_cls, bias=True)
+        self.head = nn.Linear(out_features, num_classes, bias=True)
 
         if 'attention' in consensus:
             self.attn.apply(outer_init)
