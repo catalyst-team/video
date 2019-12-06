@@ -1,5 +1,4 @@
 model_params:
-  fp16: false
   model: tsn
 
   base_model:
@@ -13,7 +12,7 @@ model_params:
     feature_net_hiddens: 128
     emb_net_hiddens: 128
     consensus: ["avg", "max", "attention"]
-    n_cls: &n_cls 4
+    num_classes: &num_classes 4
     activation_fn: ReLU
     norm_fn: BatchNorm1d
     bias: false
@@ -21,56 +20,75 @@ model_params:
 
 args:
   expdir: "tsn"
-  logdir: /mnt/ssd1/logs/tsn
-#  baselogdir: /mnt/ssd1/logs/tsn_grid # for grid search
+#  logdir: ./logs
+  baselogdir: ./logs # for grid search
 
 stages:
   state_params:
-    main_metric: precision01
-    minimize_metric: false
+    main_metric: &reduce_metric  auc_class/_mean
+    minimize_metric: False
 
   criterion_params:
-    criterion: BCELoss # CrossEntropyLoss
+    criterion: FocalLossMultiClass # CrossEntropyLoss
 
   data_params:
-    batch_size: 16
-    n_frames: 5
+    num_workers: 4
+    batch_size: 4
+    per_gpu_scaling: True
+
+    num_frames: 5
     time_window: 1
     uniform_time_sample: true
     tag2class: "./data/labeling.json"
     tag_column: "video"
     class_column: "class"
-    datapath: "/mnt/ssd1/datasets/video_dataset_processed"
+    datapath: "./data/video_dataset_processed"
     in_csv_train: "./data/train_fold_0.csv"
-    in_csv_valid: "./data/val_fold_0.csv"
-    in_csv_infer: "./data/val_fold_0.csv"
-    one_hot_classes: *n_cls
-    num_workers: 16
+    in_csv_valid: "./data/valid_fold_0.csv"
+    in_csv_infer: "./data/valid_fold_0.csv"
+    one_hot_classes: *num_classes
+
 
   callbacks_params:
-    loss:
-      callback: LossCallback
-      input_key: targets_onehot
+    loss_class:
+      callback: CriterionCallback
+      input_key: targets
+      output_key: logits
+      prefix: loss_class
+#      criterion_key: class
+
+    accuracy_class:
+      callback: AccuracyCallback
+      input_key: targets
+      output_key: logits
+      prefix: accuracy_class
+      num_classes: *num_classes
+    auc_class:
+      callback: AUCCallback
+      input_key: targets_one_hot
+      output_key: logits
+      prefix: auc_class
+      num_classes: *num_classes
+    f1_class:
+      callback: F1ScoreCallback
+      input_key: targets_one_hot
+      output_key: logits
+      activation: Softmax
+    cm_class:
+      callback: ConfusionMatrixCallback
+      input_key: targets
+      output_key: logits
+      prefix: cm_class
+      num_classes: *num_classes
 
     optimizer:
       callback: OptimizerCallback
-
-    precision:
-      callback: PrecisionCallback
-      precision_args: [1]
-
+      loss_key: loss_class
     scheduler:
       callback: SchedulerCallback
-      reduce_metric: precision01
-
+      reduce_metric: *reduce_metric
     saver:
       callback: CheckpointCallback
-
-    tflogger:
-      callback: TensorboardLogger
-
-    infer:
-      callback: InferCallback
 
   stage_head_train:
     state_params:
@@ -87,7 +105,7 @@ stages:
       milestones: [5]
 
   stage_full_finetune:
-    stage_params:
+    state_params:
       partial_bn: 2
       num_epochs: 20
 
